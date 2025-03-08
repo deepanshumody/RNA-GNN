@@ -32,11 +32,17 @@ pdb_file_path = "./data/RNA-only-PDB/1fuf.pdb"               # Raw PDB file (wit
 ##################################################
 #          High-Level Description Text
 ##################################################
-description_text = """
-# RNA–Metal Ion Binding Predictor
+heading_text="""# RNA–Metal Ion Binding Predictor
 
 This application demonstrates how a **Graph Neural Network (GNN)** can be used to predict
 possible metal ion binding sites in RNA structures. 
+
+---
+
+Additional details about the project are provided at the end. Continue below to see everything in action!"""
+
+description_text = """
+
 
 ### How It Works
 
@@ -62,10 +68,6 @@ possible metal ion binding sites in RNA structures.
 - **Load Model & Data**: The script automatically loads a pre-trained GNN model (`best_model.pth`).
 - **Inference**: We evaluate the GNN on the 1FUF RNA structure, applying a threshold to decide which coordinates are “positives.”
 - **3D Visualization**: We display both the original PDB (with real ions) and a merged PDB (with predicted ions) side by side.
-
----
-
-Continue below to see everything in action!
 """
 
 ##################################################
@@ -185,9 +187,7 @@ def eval_with_outputs(model, device, loader):
 ##################################################
 def main():
     st.set_page_config(page_title="RNA-Metal Ion Binding Predictor", layout="wide")
-
-    # Display the overall description at the top
-    st.markdown(description_text, unsafe_allow_html=True)
+    st.markdown(heading_text, unsafe_allow_html=True)
 
     # Sidebar
     st.sidebar.title("Configuration")
@@ -317,9 +317,11 @@ def main():
         except Exception as e:
             st.warning("Could not display the merged PDB.")
             st.info(str(e))
+    # Display the overall description at the top
+    st.success("Inference complete. Compare the original and predicted ions above! We have predicted the ions(small dots) in the RNA structure. The left image shows the original RNA structure with ions(multicolored dots), and the right image shows the predicted ions(green dots) in the RNA structure.")
 
+    st.markdown(description_text, unsafe_allow_html=True)
     st.markdown("---")
-    st.success("Inference complete. Compare the original and predicted ions above! We have predicted the ions(small dots) in the RNA structure. The left image shows the original RNA structure with ions, and the right image shows the predicted ions in the RNA structure.")
 
 if __name__ == "__main__":
     main()
