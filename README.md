@@ -1,74 +1,206 @@
-# RNA-metal-ion-GNN
-The code contains 2 Graph Neural Network model architectures for metal ion binding site prediction in RNA-
-1. GCN
-2. GNN-DTI based on the paper - https://pubs.acs.org/doi/10.1021/acs.jcim.9b00387
+# RNA-Metal-Ion-GNN
 
-Following are the steps required to run it-
+This repository contains two primary GNN-based architectures for predicting metal ion binding sites in RNA:
 
-## 1. Obtaining nonredundantRNA.txt
-To reproduce everything including which molecules to select for training, *clustering1.py, clustering2.py, clustering3.py, bestresolutionfromcluster.py* need to be run in the given order.
+1. **GCN (Graph Convolutional Network)**
+2. **GNN-DTI** (based on [Wang et al., 2019](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00387))
 
-This would require an input of comma separated list of all RNA only PDB IDs which is provided in *OnlyRNAlist.txt*. This list can also be obtained from RCSB PDB website by searching for RNA only structures.
+The project expands on the approach of encoding RNA structures as graphs and applying neural networks for site prediction.
 
-Running the above will output a file *nonredundantRNA.txt* which contains a list of non redundant RNAs based on sequence having resolution better than 6A.
+---
 
-These files have already been run and *nonredundantRNA.txt* contains a list of PDB IDs to train on but the above procedure can be followed to reproduce it. Hence, it is optional.
+## Table of Contents
+1. [Introduction](#introduction)
+2. [Key Features](#key-features)
+3. [Project Overview](#project-overview)
+    - [GCN](#gcn)
+    - [GNN-DTI](#gnn-dti)
+4. [Installation](#installation)
+5. [Generating Non-Redundant RNA List](#generating-non-redundant-rna-list)
+6. [Creating the Dataset](#creating-the-dataset)
+    - [Dataset Variants](#dataset-variants)
+7. [Usage](#usage)
+8. [Training](#training)
+    - [3.a) Training GCN](#3a-training-gcn)
+    - [3.b) Training GNN-DTI](#3b-training-gnn-dti)
+9. [Testing](#testing)
+    - [4.a) Testing GCN](#4a-testing-gcn)
+    - [4.b) Testing GNN-DTI](#4b-testing-gnn-dti)
+10. [Slides](#slides)
+11. [License](#license)
+12. [Contact](#contact)
 
-## 2. Creating the dataset
-Currently, a few versions of the dataset have been created. PDB structures of the RNA are required to be downloaded and saved in folder RNA-only-PDB in the working directory. The dataset will be created from these PDB files.
+---
 
-Then *gnn_rna.py, gnn_rna_0A.py, gnn_rna_autodock.py, gnn_rna_morepos.py* can be used to create different versions of the dataset by choosing different locations to place the ions. For each PDB, a pickle file is generated containing all locations and the generated graphs and features. The GNN would work as a binary classifier for each location.
+## Introduction
 
-*MG_ideal.sdf* is the file for the binding ion.
+Metal ions are crucial cofactors in many RNA-related biochemical processes. Accurately predicting the location of metal ion binding sites in RNA can aid in understanding RNA structure and function, accelerating both academic research and potential therapeutic applications.
 
-*gnn_rna_autodock.py* requires additional files generated through autodock vina
+This repository uses graph neural networks to model potential metal ion binding sites:
+- **GCN** uses traditional graph convolutional layers.
+- **GNN-DTI** follows drug-target interaction paradigms to capture more complex relationship patterns.
 
-## 2.1 Using the datasets created
-The working directory is /home/kihara/modyd/Desktop/RNA_GNN_Metal_ion
+---
 
-There are 4 folders in the working directory with 4 datasets present in the folders named-
+## Key Features
 
-1.RNA-graph-pickles - Contains points placed on a 3A grid over the whole molecule, the closest point to the actual location of ion being considered positive. Contains roughly 3000 positive points and 1000000 negative points.
+1. **Graph Construction**: Scripts to convert RNA structures into graph data (nodes represent nucleotides/atoms, edges represent connectivity or distance thresholds).
+2. **Multiple Dataset Variants**: Provides different ways of placing metal ions and negative points, allowing for flexible experimentation.
+3. **Scalable Training**: Scripts for training both GCN and GNN-DTI frameworks.
+4. **Customizable**: Easy to tweak hyperparameters, adjacency strategies, or input data.
+5. **Reproducibility**: Steps to generate the exact same list of PDB IDs (nonredundantRNA.txt) included.
 
-2.RNA-graph-pickles0A - Contains points placed on a 3A grid over the whole molecule but stops at 0A from the atoms at the edges, the closest point to the actual location of ion being considered positive. Contains roughly 2500 positive points and 500000 negative points.
+---
 
-3.RNA-graph-pickles-autodock - Contains points placed over the whole molecule using Autodock Vina.
+## Project Overview
 
-4.RNA-graph-picklesmorepos - Contains points placed on a 3A grid over the whole molecule, the 8 closest cubic grid points to the actual location of ion being considered positive. Contains roughly 12000 positive points and 1000000 negative points.
+### GCN
+The **GCN** model is implemented primarily in `train_gnn.py`. It treats potential metal ion binding sites as nodes on a 3D grid over the RNA structure. Each site is classified in a binary manner: binding vs. nonbinding.
 
-The creation of training, validation and testing sets is done by the training code itself. The commands following in the section below can be run to train the models.
+### GNN-DTI
+The **GNN-DTI** model is adapted from the drug-target interaction approach ([Wang et al., 2019](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00387)). It is located in the `model_GNN_DTI` folder with a primary training script `train.py`. This architecture may capture more nuanced features and interactions.
 
-## 3.a) Training GCN
-*train_gnn.py* is the main version of the GCN. It can be used to train on any version of the dataset by changing the input folder location in the code. The best model is saved and *predfrommodel.py* can be used to test individual PDB structures.
+---
 
-cd to /home/kihara/modyd/Desktop/RNA_GNN_Metal_ion
+## Installation
 
-command - python train_gnn.py
+1. **Clone the repository**:
+   ```bash
+   git clone <repo_url>
+   cd RNA-GNN
+   ```
+2. **Set up a Python environment (recommended)**:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # on Linux/Mac
+   # or
+   venv\Scripts\activate   # on Windows
+   ```
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+---
 
-## 3.b) Training GNN-DTI
-*train.py* inside model_GNN_DTI folder can be run. The dataset needs to be outside this folder. It can be used to train on any version of the dataset by changing the input folder location in the code. All of the models are saved and can be tested on individual PDBs using *test.py*
+## Generating Non-Redundant RNA List
 
-cd to /home/kihara/modyd/Desktop/RNA_GNN_Metal_ion/model_GNN_DTI
+To reproduce the exact list of PDBs used for training:
+1. **Input**: `OnlyRNAlist.txt` containing comma-separated RNA-only PDB IDs from the RCSB PDB.
+2. **Scripts**: `clustering1.py`, `clustering2.py`, `clustering3.py`, `bestresolutionfromcluster.py` (run in this order).
+3. **Output**: `nonredundantRNA.txt` containing a list of non-redundant RNAs based on sequence with resolution better than 6Å.
 
-command - CUDA_VISIBLE_DEVICES="x" python train.py where x is the GPU #
+This step is optional as the `nonredundantRNA.txt` file is already provided.
 
+---
 
-## 4.a) Testing individual structures GCN
-cd to /home/kihara/modyd/Desktop/RNA_GNN_Metal_ion
+## Creating the Dataset
 
-command - python predfrommodel.py
+To create your dataset, you must:
+1. Download the PDB files of your RNA structures and store them in `RNA-only-PDB` (within the working directory).
+2. Run **one** of the following scripts to generate data pickles:
+   - `gnn_rna.py`
+   - `gnn_rna_0A.py`
+   - `gnn_rna_autodock.py`
+   - `gnn_rna_morepos.py`
 
-## 4.b) Testing individual structures GNN-DTI
-cd to /home/kihara/modyd/Desktop/RNA_GNN_Metal_ion/model_GNN_DTI
+Each script differs in how it places potential ion locations and labels positives. For instance, `gnn_rna_morepos.py` considers 8 cubic grid points as positive.
 
-command - CUDA_VISIBLE_DEVICES="x" python test.py where x is the GPU #
+### Dataset Variants
 
+1. **RNA-graph-pickles**:
+   - Points placed on a 3Å grid over the entire molecule.
+   - Nearest grid point to the actual ion location is considered positive.
+   - ~3000 positive points, ~1,000,000 negative points.
+2. **RNA-graph-pickles0A**:
+   - Similar to above but stops at 0Å from the molecule's outer edge.
+   - ~2500 positive points, ~500,000 negative points.
+3. **RNA-graph-pickles-autodock**:
+   - Uses Autodock Vina to place points over the molecule.
+4. **RNA-graph-picklesmorepos**:
+   - 8 grid points around the actual ion location are labeled positive.
+   - ~12,000 positive points, ~1,000,000 negative points.
 
+**MG_ideal.sdf** provides the structure of the binding ion for reference.
 
-## Links to slides-
+---
 
-https://purdue0-my.sharepoint.com/:p:/g/personal/modyd_purdue_edu/EScfuI-3dBpDghQkYHrS6P8BsGjR4hLAvLPKfm-EYOnFNg?e=tvIA8d
+## Usage
 
-https://purdue0-my.sharepoint.com/:p:/g/personal/modyd_purdue_edu/EXJN6pxMfNZBnivvTjUdbCABFum4tNid0VJ6X5CW7WLyXA?e=6eIJPs
+1. **Set environment**:
+   - Make sure your dataset pickles are created and stored in the correct folders.
+2. **Adjust paths**:
+   - Update input folder paths within the training and testing scripts (`train_gnn.py`, `train.py`, etc.) based on which dataset you want to use.
+3. **Run training**:
+   - GCN: `python train_gnn.py`
+   - GNN-DTI: `CUDA_VISIBLE_DEVICES="x" python train.py` (inside `model_GNN_DTI` folder)
+4. **Run testing**:
+   - GCN: `python predfrommodel.py`
+   - GNN-DTI: `CUDA_VISIBLE_DEVICES="x" python test.py`
 
-https://purdue0-my.sharepoint.com/:p:/g/personal/modyd_purdue_edu/EdZh7vnDzwZClZ6i372E_DUB3SrtWZm17wQpZd03VlAa8w?e=kDzZlA
+---
+
+## Training
+
+### 3.a) Training GCN
+
+- **Script**: `train_gnn.py`
+- **Usage**:
+  ```bash
+  python train_gnn.py
+  ```
+- The best model is saved automatically. To evaluate on individual PDB files, use `predfrommodel.py`.
+
+### 3.b) Training GNN-DTI
+
+- **Folder**: `model_GNN_DTI`
+- **Script**: `train.py`
+- **Usage**:
+  ```bash
+  CUDA_VISIBLE_DEVICES="x" python train.py   # x is the GPU index
+  ```
+- All models are saved; use `test.py` for individual structure tests.
+
+---
+
+## Testing
+
+### 4.a) Testing Individual Structures (GCN)
+
+1. Update any path variables in `predfrommodel.py`.
+2. Run:
+   ```bash
+   python predfrommodel.py
+   ```
+
+### 4.b) Testing Individual Structures (GNN-DTI)
+
+1. Update the path to your dataset.
+2. Run:
+   ```bash
+   CUDA_VISIBLE_DEVICES="x" python test.py
+   ```
+
+---
+
+## Slides
+
+Additional background and results can be found in the following slides:
+
+- [Slide Deck 1](https://purdue0-my.sharepoint.com/:p:/g/personal/modyd_purdue_edu/EXJN6pxMfNZBnivvTjUdbCABFum4tNid0VJ6X5CW7WLyXA?e=6eIJPs)
+- [Slide Deck 2](https://purdue0-my.sharepoint.com/:p:/g/personal/modyd_purdue_edu/EdZh7vnDzwZClZ6i372E_DUB3SrtWZm17wQpZd03VlAa8w?e=kDzZlA)
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
+## Contact
+
+- **Author**: [Deepanshu Mody](https://github.com/deepanshumody)
+- For questions, feel free to open an issue or reach out directly.
+
+---
+
