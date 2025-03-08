@@ -7,3 +7,4 @@ torch
 tqdm
 pandas
 torch-geometric
+streamlit-molstar
