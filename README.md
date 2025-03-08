@@ -6,6 +6,7 @@ This repository contains two primary GNN-based architectures for predicting meta
 2. **GNN-DTI** (based on [Wang et al., 2019](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00387))
 
 The project expands on the approach of encoding RNA structures as graphs and applying neural networks for site prediction.
+The [Demo](https://gnnrna.streamlit.app/) can be viewed at the link.
 
 ---
 
