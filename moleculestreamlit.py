@@ -48,7 +48,7 @@ possible metal ion binding sites in RNA structures.
    - This way, local neighborhoods around each candidate coordinate are captured.
 
 2. **Model Architecture (GNN)**  
-   - We use a **GCN** (Graph Convolutional Network) that takes node features and adjacency as input.  
+   - We use a **GCN** (Graph Convolutional Network) that takes node features and adjacency as input.  We have also attempted to use GNN-DTI based on the following [paper](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00387)
    - The GCN learns to output a score indicating whether a coordinate patch is likely to bind a metal ion (e.g., Mg^2+).  
    - During training, known binding sites from crystal structures are labeled as positives, and non-binding sites as negatives.
 
