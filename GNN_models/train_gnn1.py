@@ -1,274 +1,125 @@
-"""Variant of train_gnn.py that trains the GCN graph classifier from
-precomputed graph tensors.
+"""GCN training variant: precomputed tensors, all negatives.
 
-Instead of rebuilding the graphs from pickle files, this script loads the
-pre-saved ``.pt`` PyTorch tensors from ``./saved_tensors/`` (and the
-``pd4rum_graphs.pt`` evaluation set). The model architecture, training loop,
-and hyperparameters are otherwise identical to train_gnn.py.
+Like ``train_gnn2.py`` but loads every negative graph (no subsampling) and uses
+large batches. The same methodology fixes apply: structure-level (PDB-grouped)
+split, a held-out structure kept out of the corpus, imbalance-aware metrics and
+loss weighting, and a fixed seed.
 """
-
-from sklearn.metrics import RocCurveDisplay
-from ogb.graphproppred import Evaluator
-import matplotlib.pyplot as plt
-import pickle
-import networkx as nx
-import numpy as np
-import torch
-from tqdm import tqdm
-import os
-import pandas as pd
-import torch.nn.functional as F
-import glob
 import copy
-from torch_geometric.utils.convert import from_networkx
-from torch_geometric.nn import GCNConv
-import torch_geometric.transforms as T
-from torch_geometric.data import Data
+import glob
+import os
+import sys
+
+import torch
 from torch_geometric.loader import DataLoader
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from gcn_model import GCN_Graph  # noqa: E402
+from rna_metrics import binding_site_metrics, format_metrics  # noqa: E402
+from rna_seed import set_seed  # noqa: E402
+from rna_splits import group_train_val_test_split  # noqa: E402
+
+NONREDUNDANT = "nonredundantRNA.txt"
+TENSOR_DIR = "./saved_tensors/"
+HELD_OUT_PATH = "pd4rum_graphs.pt"
+SEED = 42
+BATCH = 2048
+
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-import random
-
-# If you use GPU, the device should be cuda
-file1 = open('nonredundantRNA.txt', 'r')
-Lines = file1.readlines()
-file1.close()
-pos_list=[]
-neg_list=[]
-for line in Lines:
-	pos_list.extend(glob.glob("./saved_tensors/"+line.strip()+"pos_graph.pt"))
-	neg_list.extend(glob.glob("./saved_tensors/"+line.strip()+"neg_graph.pt"))
-data_list=[]
-pdb4RUM_list=torch.load('pd4rum_graphs.pt')
-for j,i in enumerate(neg_list):
-	y = torch.load(i)
-	data_list.extend(y)
-for i in pos_list:
-	y=torch.load(i)
-	data_list.extend(y)
-random.shuffle(data_list)
-train_loader = DataLoader(data_list[0:int(0.8*len(data_list))], batch_size=2048, shuffle=True, num_workers=0)
-valid_loader = DataLoader(data_list[int(0.8*len(data_list)):int(0.9*len(data_list))], batch_size=2048, shuffle=False, num_workers=0)
-test_loader = DataLoader(data_list[int(0.9*len(data_list)):], batch_size=2048, shuffle=False, num_workers=0)
-pdb4RUM_loader = DataLoader(pdb4RUM_list, batch_size=2048, shuffle=True, num_workers=0)
-class GCN(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers,
-                 dropout, return_embeds=False):
+print('Device: {}'.format(device))
+set_seed(SEED)
 
 
-        super(GCN, self).__init__()
-
-        # A list of GCNConv layers
-        self.convs = torch.nn.ModuleList(
-            [GCNConv(in_channels=input_dim, out_channels=hidden_dim)] +
-            [GCNConv(in_channels=hidden_dim, out_channels=hidden_dim)                             
-                for i in range(num_layers-2)] + 
-            [GCNConv(in_channels=hidden_dim, out_channels=output_dim)]    
-        )
-
-        # A list of 1D batch normalization layers
-        self.bns = torch.nn.ModuleList([
-            torch.nn.BatchNorm1d(num_features=hidden_dim) 
-                for i in range(num_layers-1)
-        ])
-
-        self.softmax = torch.nn.LogSoftmax()
-
-        # Probability of an element getting zeroed
-        self.dropout = dropout
-
-        # Skip classification layer and return node embeddings
-        self.return_embeds = return_embeds
-
-    def reset_parameters(self):
-        for conv in self.convs:
-            conv.reset_parameters()
-        for bn in self.bns:
-            bn.reset_parameters()
-
-    def forward(self, x, adj_t):
-
-        out = None
- 
-        for conv, bn in zip(self.convs[:-1], self.bns):
-            x1 = F.relu(bn(conv(x, adj_t)))
-            if self.training:
-                x1 = F.dropout(x1, p=self.dropout)
-            x = x1
-        x = self.convs[-1](x, adj_t)
-        out = x if self.return_embeds else self.softmax(x)
-
-        return out
-args = {
-      'device': device,
-      'num_layers': 5,
-      'hidden_dim': 256,
-      'dropout': 0.5,
-      'lr': 0.001,
-      'epochs': 30,
-  }
-
-from torch_geometric.nn import global_add_pool, global_mean_pool
-full_atom_feature_dims = [2 for i in range(56)]
-class AtomEncoder(torch.nn.Module):
-
-    def __init__(self, emb_dim):
-        super(AtomEncoder, self).__init__()
-        
-        self.atom_embedding_list = torch.nn.ModuleList()
-
-        for i, dim in enumerate(full_atom_feature_dims):
-            emb = torch.nn.Embedding(dim, emb_dim)
-            torch.nn.init.xavier_uniform_(emb.weight.data)
-            self.atom_embedding_list.append(emb)
-
-    def forward(self, x):
-        x_embedding = 0
-        for i in range(x.shape[1]):
-            x_embedding += self.atom_embedding_list[i](x[:,i])
-
-        return x_embedding
-### GCN to predict graph property
-class GCN_Graph(torch.nn.Module):
-    def __init__(self, hidden_dim, output_dim, num_layers, dropout):
-        super(GCN_Graph, self).__init__()
-        full_atom_feature_dims = [2 for i in range(56)]
-        # Load encoders for Atoms in molecule graphs
-        self.node_encoder = AtomEncoder(hidden_dim)
-
-        # Node embedding model
-        self.gnn_node = GCN(hidden_dim, hidden_dim,
-            hidden_dim, num_layers, dropout, return_embeds=True)
-
-        self.pool = global_mean_pool
-
-        # Output layer
-        self.linear = torch.nn.Linear(hidden_dim, output_dim)
+def pdb_from_tensor_path(path):
+    name = os.path.basename(path)
+    return name.replace("pos_graph.pt", "").replace("neg_graph.pt", "").upper()
 
 
-    def reset_parameters(self):
-      self.gnn_node.reset_parameters()
-      self.linear.reset_parameters()
-
-    def forward(self, batched_data):
-
-
-        # Extract important attributes of our mini-batch
-        x, edge_index, batch = batched_data.x, batched_data.edge_index, batched_data.batch
-        embed = self.node_encoder(x)
-
-        out = None
-
-        embed = self.gnn_node(embed, edge_index)
-        features = self.pool(embed, batch)
-        out = self.linear(features)
+def tag(graphs, pdb_id):
+    for g in graphs:
+        g.pdb = pdb_id
+    return graphs
 
 
-        return out
-def train(model, device, data_loader, optimizer, loss_fn):
+with open(NONREDUNDANT) as f:
+    lines = [line.strip() for line in f if line.strip()]
 
+data_list = []
+for line in lines:
+    for path in glob.glob(TENSOR_DIR + line + "neg_graph.pt") + glob.glob(TENSOR_DIR + line + "pos_graph.pt"):
+        data_list.extend(tag(torch.load(path), pdb_from_tensor_path(path)))
+
+if not data_list:
+    raise SystemExit(f"No tensors found in {TENSOR_DIR}; build them before training.")
+
+groups = [g.pdb for g in data_list]
+train_idx, valid_idx, test_idx = group_train_val_test_split(groups, (0.8, 0.1, 0.1), seed=SEED)
+train_data = [data_list[i] for i in train_idx]
+valid_data = [data_list[i] for i in valid_idx]
+test_data = [data_list[i] for i in test_idx]
+num_features = int(data_list[0].x.shape[1])
+
+held_out_list = torch.load(HELD_OUT_PATH) if os.path.exists(HELD_OUT_PATH) else []
+train_loader = DataLoader(train_data, batch_size=BATCH, shuffle=True, num_workers=0)
+valid_loader = DataLoader(valid_data, batch_size=BATCH, shuffle=False, num_workers=0)
+test_loader = DataLoader(test_data, batch_size=BATCH, shuffle=False, num_workers=0)
+held_out_loader = DataLoader(held_out_list, batch_size=BATCH, shuffle=False, num_workers=0) \
+    if held_out_list else None
+
+args = {'num_layers': 5, 'hidden_dim': 256, 'dropout': 0.5, 'lr': 0.001, 'epochs': 30}
+
+
+def train(model, loader, optimizer, loss_fn):
     model.train()
-    loss = 0
-
-    for step, batch in enumerate(tqdm(data_loader, desc="Iteration")):
-      batch = batch.to(device)
-
-      if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
-          pass
-      else:
+    loss = torch.tensor(0.0)
+    for batch in loader:
+        batch = batch.to(device)
+        if batch.x.shape[0] == 1 or batch.batch[-1] == 0:
+            continue
         is_labeled = batch.y == batch.y
-
         optimizer.zero_grad()
         out = model(batch)
         loss = loss_fn(out[is_labeled], batch.y[is_labeled].float().unsqueeze(1))
-
         loss.backward()
         optimizer.step()
-
     return loss.item()
 
-def eval(model, device, loader, evaluator, save_model_results=False, save_file=None):
+
+def eval(model, loader):
     model.eval()
-    y_true = []
-    y_pred = []
-    pdb_id = []
-    coord = []
-    for step, batch in enumerate(tqdm(loader, desc="Iteration")):
+    y_true, y_pred = [], []
+    for batch in loader:
         batch = batch.to(device)
-
         if batch.x.shape[0] == 1:
-            pass
-        else:
-            with torch.no_grad():
-                pred = model(batch)
+            continue
+        with torch.no_grad():
+            pred = model(batch)
+        y_true.append(batch.y.view(pred.shape).detach().cpu())
+        y_pred.append(pred.detach().cpu())
+    y_true = torch.cat(y_true, dim=0).numpy().reshape(-1)
+    y_pred = torch.cat(y_pred, dim=0).numpy().reshape(-1)
+    return binding_site_metrics(y_true, y_pred)
 
-            y_true.append(batch.y.view(pred.shape).detach().cpu())
-            y_pred.append(pred.detach().cpu())
-            pdb_id.append(batch.pdb)
-            coord=coord+(batch.coords)
 
-    coord=np.array(coord)
-    pdb_id=np.array(np.concatenate(pdb_id).flat)
-    y_true = torch.cat(y_true, dim = 0).numpy()
-    y_pred = torch.cat(y_pred, dim = 0).numpy()
-    input_dict = {"y_true": y_true, "y_pred": y_pred}
-
-    if save_model_results:
-        print ("Saving Model Predictions")
-        # Create a pandas dataframe with a two columns
-        # y_pred | y_true
-        data = {}
-        data['y_pred'] = y_pred.reshape(-1)
-        data['y_true'] = y_true.reshape(-1)
-        data['pdb_id'] = pdb_id.reshape(-1)
-        data['coord'] = coord.reshape(-1)
-        df = pd.DataFrame(data=data)
-        # Save to csv
-        df.to_csv('preds_RNA' + save_file + '.csv', sep=',', index=False)
-        RocCurveDisplay.from_predictions(data['y_true'], data['y_pred'])
-        plt.savefig("roc_curve.png")
-    return evaluator.eval(input_dict)
-model = GCN_Graph(args['hidden_dim'],
-              1, args['num_layers'],
-              args['dropout']).to(device)
-evaluator = Evaluator(name='ogbg-molhiv')
+n_pos = sum(int(g.y.item() == 1) for g in train_data)
+pos_weight = torch.tensor([(len(train_data) - n_pos) / max(n_pos, 1)], dtype=torch.float, device=device)
+model = GCN_Graph(args['hidden_dim'], 1, args['num_layers'], args['dropout'],
+                  num_features=num_features).to(device)
 model.reset_parameters()
-
 optimizer = torch.optim.Adam(model.parameters(), lr=args['lr'])
-loss_fn = torch.nn.BCEWithLogitsLoss()
+loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-best_model = None
-best_valid_acc = 0
-
+best_model, best_valid_auc = None, 0
 for epoch in range(1, 1 + args["epochs"]):
-	print('Training...')
-	loss = train(model, device, train_loader, optimizer, loss_fn)
+    loss = train(model, train_loader, optimizer, loss_fn)
+    vm = eval(model, valid_loader)
+    if vm["roc_auc"] == vm["roc_auc"] and vm["roc_auc"] > best_valid_auc:
+        best_valid_auc = vm["roc_auc"]
+        best_model = copy.deepcopy(model)
+    print(f"Epoch {epoch:02d} | loss {loss:.4f} | valid ROC-AUC {vm['roc_auc']:.3f} PR-AUC {vm['pr_auc']:.3f}")
 
-	print('Evaluating...')
-	train_result = eval(model, device, train_loader, evaluator)
-	val_result = eval(model, device, valid_loader, evaluator)
-	test_result = eval(model, device, test_loader, evaluator)
-
-	train_acc, valid_acc, test_acc = train_result['rocauc'], val_result['rocauc'], test_result['rocauc']
-	if valid_acc > best_valid_acc:
-		best_valid_acc = valid_acc
-		best_model = copy.deepcopy(model)
-	print(f'Epoch: {epoch:02d}, '
-	  f'Loss: {loss:.4f}, '
-	  f'Train: {100 * train_acc:.2f}%, '
-	  f'Valid: {100 * valid_acc:.2f}% '
-	  f'Test: {100 * test_acc:.2f}%')
-train_acc = eval(best_model, device, train_loader, evaluator)['rocauc']
-valid_acc = eval(best_model, device, valid_loader, evaluator, save_model_results=True, save_file="valid")['rocauc']
-test_acc  = eval(best_model, device, test_loader, evaluator, save_model_results=True, save_file="test")['rocauc']
-torch.save(best_model.state_dict(), "./best_model.pth")
-pdb4RUM_acc = eval(best_model, device, pdb4RUM_loader, evaluator, save_model_results=True, save_file="4RUM")['rocauc']
-
-print(f'Best model: '
-
-f'Train: {100 * train_acc:.2f}%, '
-
-f'Valid: {100 * valid_acc:.2f}% '
-
-f'Test: {100 * test_acc:.2f}%')
-
-print(pdb4RUM_acc)
+best_model = best_model if best_model is not None else model
+torch.save(best_model.state_dict(), "./best_model1.pth")
+print("test    :", format_metrics(eval(best_model, test_loader)))
+if held_out_loader is not None:
+    print("HELD-OUT:", format_metrics(eval(best_model, held_out_loader)))

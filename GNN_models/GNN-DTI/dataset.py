@@ -33,9 +33,13 @@ def collate_fn(batch):
     Returns a tuple ``(H, A1, A2, C, V, keys)`` of padded float tensors plus the
     list of sample keys.
     """
-    max_natoms = max([len(item['H']) for item in batch if item is not None])
-    
-    H = np.zeros((len(batch), max_natoms, 56))
+    items = [item for item in batch if item is not None]
+    max_natoms = max([len(item['H']) for item in items])
+    # Infer the feature width from the data instead of hard-coding 56, so an
+    # extended atom vocabulary (wider H) collates without code changes.
+    feat_dim = int(np.asarray(items[0]['H']).shape[1])
+
+    H = np.zeros((len(batch), max_natoms, feat_dim))
     A1 = np.zeros((len(batch), max_natoms, max_natoms))
     A2 = np.zeros((len(batch), max_natoms, max_natoms))
     C = np.zeros((len(batch),))

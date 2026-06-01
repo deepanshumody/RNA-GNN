@@ -1,8 +1,10 @@
 """Helper utilities for the GNN-DTI model.
 
 This module provides small support functions used throughout the GNN-DTI
-pipeline: GPU device selection, model parameter initialization, one-hot
-feature encoders, and per-atom feature extraction.
+pipeline: GPU device selection, model parameter initialization, and one-hot
+feature encoders. (Atom featurisation lives in the shared
+``dataset_creation/atom_features.py`` — the previous copy here was unused and
+carried the old magnesium-as-hydrogen encoding, so it was removed.)
 """
 
 import numpy as np
@@ -74,17 +76,3 @@ def one_of_k_encoding_unk(x, allowable_set):
     if x not in allowable_set:
         x = allowable_set[-1]
     return list(map(lambda s: x == s, allowable_set))
-
-def atom_feature(m, atom_i, i_donor, i_acceptor):
-    """Build the 28-dim feature vector for atom ``atom_i`` of molecule ``m``.
-
-    Concatenates one-hot encodings of the atom symbol, degree, total hydrogens,
-    and implicit valence with an aromaticity flag.
-    """
-    atom = m.GetAtomWithIdx(atom_i)
-    return np.array(one_of_k_encoding_unk(atom.GetSymbol(),
-                                      ['C', 'N', 'O', 'S', 'F', 'P', 'Cl', 'Br', 'B', 'H']) +
-                    one_of_k_encoding(atom.GetDegree(), [0, 1, 2, 3, 4, 5]) +
-                    one_of_k_encoding_unk(atom.GetTotalNumHs(), [0, 1, 2, 3, 4]) +
-                    one_of_k_encoding_unk(atom.GetImplicitValence(), [0, 1, 2, 3, 4, 5]) +
-                    [atom.GetIsAromatic()])    # (10, 6, 5, 6, 1) --> total 28
