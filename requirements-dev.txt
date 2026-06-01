@@ -1,0 +1,4 @@
+# Development tooling (linting + tests). Install with:
+#   pip install -r requirements-dev.txt
+pytest
+ruff

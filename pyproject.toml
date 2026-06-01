@@ -1,0 +1,17 @@
+# Tooling configuration only (linting + tests). This project is run as scripts,
+# not installed as a package, so there is no [build-system] section.
+
+[tool.ruff]
+line-length = 120
+# The dataset_creation/ and preprocessing/ scripts are exploratory research
+# notebook exports kept for reference; they are excluded from strict linting.
+extend-exclude = ["dataset_creation", "preprocessing"]
+
+[tool.ruff.lint]
+# Critical correctness checks only (syntax errors, undefined names, bad
+# comparisons) — not style nits, given this is research code.
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

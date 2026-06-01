@@ -1,10 +1,23 @@
+# Core scientific stack
+numpy
+scipy
+pandas
 scikit-learn
-ogb
 matplotlib
 networkx
-numpy
-torch
 tqdm
-pandas
+
+# Deep learning / graph neural networks
+# NOTE: install torch + torch-geometric matching your CUDA version first.
+# See https://pytorch.org and https://pytorch-geometric.readthedocs.io
+torch
 torch-geometric
+ogb
+
+# Cheminformatics & structural biology (dataset creation / preprocessing)
+rdkit
+biopython
+
+# Interactive demo app
+streamlit
 streamlit-molstar

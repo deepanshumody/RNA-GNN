@@ -1,24 +1,38 @@
+"""Dataset utilities for the GNN-DTI pipeline.
+
+Provides a weighted sampler (``DTISampler``) for class-balanced batching and a
+``collate_fn`` that pads variable-size molecular graphs in a batch to a common
+maximum atom count before stacking them into tensors.
+"""
 from torch.utils.data.sampler import Sampler
 import numpy as np
 import torch
 import random
 class DTISampler(Sampler):
+    """Weighted random sampler that draws indices proportional to ``weights``."""
 
     def __init__(self, weights, num_samples, replacement=True):
+        """Normalize ``weights`` to a probability distribution and store sampling settings."""
         weights = np.array(weights)/np.sum(weights)
         self.weights = weights
         self.num_samples = num_samples
         self.replacement = replacement
-    
+
     def __iter__(self):
-        #return iter(torch.multinomial(self.weights, self.num_samples, self.replacement).tolist())
-        retval = np.random.choice(len(self.weights), self.num_samples, replace=self.replacement, p=self.weights) 
+        """Yield ``num_samples`` indices drawn according to the weight distribution."""
+        retval = np.random.choice(len(self.weights), self.num_samples, replace=self.replacement, p=self.weights)
         return iter(retval.tolist())
 
     def __len__(self):
+        """Return the number of samples drawn per iteration."""
         return self.num_samples
 
 def collate_fn(batch):
+    """Pad each graph in ``batch`` to the max atom count and stack into batched tensors.
+
+    Returns a tuple ``(H, A1, A2, C, V, keys)`` of padded float tensors plus the
+    list of sample keys.
+    """
     max_natoms = max([len(item['H']) for item in batch if item is not None])
     
     H = np.zeros((len(batch), max_natoms, 56))

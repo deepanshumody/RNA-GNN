@@ -1,0 +1,26 @@
+# Exact dependency versions last verified to run the demo + core pipeline.
+# Captured from a working environment on Python 3.12.
+# For the loose, top-level dependency list see requirements.txt.
+#
+# Install torch / torch-geometric matching your CUDA (or CPU) setup first:
+#   https://pytorch.org  ·  https://pytorch-geometric.readthedocs.io
+
+numpy==1.26.4
+scipy==1.14.1
+pandas==2.2.3
+scikit-learn==1.8.0
+matplotlib==3.9.2
+networkx==3.4.2
+tqdm==4.67.1
+
+torch==2.11.0
+torch-geometric==2.6.1
+ogb==1.3.6
+
+rdkit==2024.9.5
+
+streamlit==1.41.1
+streamlit-molstar==0.4.21
+
+# biopython is only needed for the exploratory preprocessing/ scripts and is
+# not pinned here (not required to run the demo or training).

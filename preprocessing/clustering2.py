@@ -1,3 +1,10 @@
+"""Exploratory/reference preprocessing script (clustering step 2).
+
+Computes a pairwise sequence-similarity matrix across the structures stored in
+``saved_dictionary.pkl`` using Biopython global alignment, then saves the
+resulting 2D matrix. This is an exploratory script kept for reference and is
+not part of the production pipeline.
+"""
 import pickle
 from Bio import pairwise2
 from Bio.pairwise2 import format_alignment
@@ -6,7 +13,6 @@ from multiprocessing import Pool
 def calcu_drna_seqsim_penalmax(input_seq_list1,input_seq_list2):
     max_similarity1=0
     for input_seq1 in input_seq_list1:
-        #print(input_seq1)
         if len(input_seq1) <= 10:
             continue
         for input_seq2 in input_seq_list2:
@@ -29,7 +35,6 @@ def calcu_drna_seqsim_penalmax(input_seq_list1,input_seq_list2):
             cur_sim = max_match/total_denominator
             if cur_sim>max_similarity1:
                 max_similarity1 = cur_sim
-            #print("denominator %d, match %d, current identity %.4f"%(total_denominator,max_match,cur_sim))
     return max_similarity1
 with open('saved_dictionary.pkl', 'rb') as f:
     newdict2 = pickle.load(f)
@@ -54,7 +59,6 @@ for i in range(len(newdict2) - 1):
 	    count_result += 1
 	    max_similarity1=res.get()
 	    seq_record[i,j]=max_similarity1
-	    seq_record[j,i]=max_similarity1#max_similarity2
-	    #print("%s/%s: %.4f/%.4f"%(pdb1,pdb2,seq_record[i,j],seq_record[j,i]))
+	    seq_record[j,i]=max_similarity1
 	print("%d/%d calculation finished" % (i, len(newdict2)))
 	np.save("2d_matrix.npy", seq_record)

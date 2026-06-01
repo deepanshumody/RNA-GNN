@@ -1,3 +1,8 @@
+"""GCN single-structure inference.
+
+Loads ``best_model.pth`` and runs inference on a single RNA structure,
+writing the predictions to a CSV file and saving a ROC curve plot.
+"""
 from sklearn.metrics import RocCurveDisplay
 from ogb.graphproppred import Evaluator
 import matplotlib.pyplot as plt
@@ -6,7 +11,6 @@ import networkx as nx
 import numpy as np
 import torch
 from tqdm import tqdm
-print(torch.__version__)
 import pandas as pd
 import torch.nn.functional as F
 from torch_geometric.utils.convert import from_networkx
@@ -16,12 +20,9 @@ from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import global_add_pool, global_mean_pool
 
-print(torch.cuda.is_available())  # Should print: False
-print(torch.device("cpu"))  # Should print: cpu
-
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 pdb1FUF_list=[]
-with open('./RNA-graph-pickles/1FUF.pkl', 'rb') as f:
+with open('./data/RNA-graph-pickles/1fuf.pkl', 'rb') as f:
         newdict2 = pickle.load(f)	
 for coord,graph in (newdict2.items()):
         G=nx.from_numpy_array(np.array(graph['A1']))
@@ -212,7 +213,7 @@ def eval(model, device, loader, evaluator, save_model_results=False, save_file=N
         # Save to csv
         df.to_csv('preds_RNA' + save_file + '.csv', sep=',', index=False)
         RocCurveDisplay.from_predictions(data['y_true'], data['y_pred'])
-        plt.savefig("squares.png")
+        plt.savefig("roc_curve.png")
     return evaluator.eval(input_dict)
 best_model = GCN_Graph(args['hidden_dim'],
               1, args['num_layers'],

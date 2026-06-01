@@ -1,3 +1,15 @@
+"""Exploratory / reference preprocessing script (step 1 of building the
+non-redundant RNA list).
+
+This module performs sequence-similarity clustering of RNA PDB entries: it
+reads a list of RNA PDB IDs, groups their associated sequence files, and
+computes pairwise sequence-identity to support redundancy filtering.
+
+NOTE: This is an exploratory notebook-style dump kept for reference. It is not
+guaranteed to run as-is and may require adaptation (e.g. defining input file
+paths and the `files`/`lenh` variables, and resolving imports) before use.
+"""
+
 with open('OnlyRNAlist.txt','r') as file:
         pdb_id_list = file.readline().split(',')
         print(pdb_id_list)
@@ -58,6 +70,6 @@ for i in pdb_id_list:
     input_seq_list = read_seq(j)
     finallist.append(input_seq_list[0])
   newdict2[i]=finallist
- import pickle
+import pickle
 with open('saved_dictionary.pkl', 'wb') as f:
     pickle.dump(newdict2, f)

@@ -1,3 +1,9 @@
+"""Testing/inference script for the GNN-DTI model on RNA-ligand graph data.
+
+Loads a trained GNN checkpoint, runs inference over the test dataset built
+from the pickled graph files, writes per-sample predictions to a CSV file and
+reports the ROC-AUC score.
+"""
 import pickle
 from gnn import gnn,FocalLoss
 import time
@@ -7,14 +13,19 @@ import torch.nn as nn
 import torch
 import time
 import os
+import warnings
 from sklearn.metrics import roc_auc_score
 import argparse
 import time
-from torch.utils.data import DataLoader                                     
+from torch.utils.data import DataLoader
 from dataset import collate_fn, DTISampler
 import glob
 import random
 import pandas as pd
+
+# Default path to the trained model checkpoint loaded for inference. Lifted from
+# a hardcoded absolute path to a relative location under the save directory.
+LOAD_SAVE_FILE = os.path.join('./savemorepos/', 'save_172.pt')
 now = time.localtime()
 s = "%04d-%02d-%02d %02d:%02d:%02d" % (now.tm_year, now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec)
 print (s)
@@ -32,9 +43,6 @@ for i in ['./4RUM.pkl']:
 	for coord,graph in ((newdict.items())):
 		graph['key']=coord+i[-12:-8]
 		data_list.append(graph)
-		#print(graph.keys())
-	#if(len(data_list)>31):
-		#break
 
 
 parser = argparse.ArgumentParser()
@@ -67,7 +75,7 @@ save_dir = args.save_dir
 
 #make save dir if it doesn't exist
 if not os.path.isdir(save_dir):
-    os.system('mkdir ' + save_dir)
+    os.makedirs(save_dir, exist_ok=True)
 
 #read data. data is stored in format of dictionary. Each key has information about protein-ligand complex.
 #with open (args.train_keys, 'rb') as fp:
@@ -86,7 +94,7 @@ if not os.path.isdir(save_dir):
 model = gnn(args)
 print ('number of parameters : ', sum(p.numel() for p in model.parameters() if p.requires_grad))
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model = utils.initialize_model(model, device, load_save_file='/home/kihara/modyd/Desktop/RNA_GNN_Nov11/model_GNN_DTI/savemorepos/save_172.pt')
+model = utils.initialize_model(model, device, load_save_file=LOAD_SAVE_FILE)
 print('Device: {}'.format(device))
 #train and test dataset
                      
@@ -98,7 +106,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
 #loss function
 loss_fn = nn.BCELoss()
-np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
+warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
 
 st = time.time()
 #collect losses of each iteration
@@ -130,9 +138,6 @@ for i_batch, sample in enumerate(test_dataloader):
 	test_true.append(Y.data.cpu().numpy())
 	test_pred.append(pred.data.cpu().numpy())
 	ke=ke+(keys)
-	
-	#print(keys)
-	#if i_batch>10 : break
 
 
 test_losses = np.mean(np.array(test_losses))
@@ -140,8 +145,6 @@ test_losses = np.mean(np.array(test_losses))
 test_pred = np.concatenate(np.array(test_pred), 0)
 
 test_true = np.concatenate(np.array(test_true), 0)
-print(len(ke))
-print(test_pred.shape)
 data={}
 data['y_pred'] = test_pred.reshape(-1)
 data['y_true'] = test_true.reshape(-1)

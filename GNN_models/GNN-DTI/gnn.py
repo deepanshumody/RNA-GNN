@@ -1,3 +1,9 @@
+"""GNN-DTI model definitions.
+
+Provides a binary FocalLoss and the ``gnn`` drug-target interaction model,
+which embeds molecular graphs through stacked GAT_gate layers and predicts an
+interaction score via a fully connected head.
+"""
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
@@ -9,6 +15,7 @@ from layers import GAT_gate
 N_atom_features = 28
 
 class FocalLoss(nn.Module):
+    """Binary focal loss to down-weight easy examples during training."""
     def __init__(self, weight=None, size_average=True):
         super(FocalLoss, self).__init__()
 
@@ -29,6 +36,12 @@ class FocalLoss(nn.Module):
         return focal_loss
 
 class gnn(torch.nn.Module):
+    """Graph neural network for drug-target interaction prediction.
+
+    Embeds an input molecular graph with stacked GAT_gate layers and maps the
+    pooled graph representation to an interaction score through a fully
+    connected head.
+    """
     def __init__(self, args):
         super(gnn, self).__init__()
         n_graph_layer = args.n_graph_layer
@@ -70,7 +83,6 @@ class gnn(torch.nn.Module):
         regularization = torch.empty(len(self.FC)*1-1, device=c_hs.device)
 
         for k in range(len(self.FC)):
-            #c_hs = self.FC[k](c_hs)
             if k<len(self.FC)-1:
                 c_hs = self.FC[k](c_hs)
                 c_hs = F.dropout(c_hs, p=self.dropout_rate, training=self.training)

@@ -1,24 +1,33 @@
+"""Train a GNN for drug-target (RNA) interaction prediction.
+
+Adapted from Wang et al. (2019) drug-target-interaction GNN. Loads positive and
+negative RNA graph pickles, builds train/test splits, and trains a graph neural
+network, logging ROC-AUC / precision-recall metrics each epoch.
+"""
 import pickle
 from gnn import gnn,FocalLoss
 import time
 import numpy as np
 import utils
+import warnings
 import torch.nn as nn
 import torch
-import time
 import os
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import precision_recall_curve
 import argparse
-import time
-from torch.utils.data import DataLoader                                     
+from torch.utils.data import DataLoader
 from dataset import collate_fn, DTISampler
 import glob
 import random
 import pandas as pd
 import matplotlib.pyplot as plt
+
+# Directory containing the RNA graph pickle files (*_pos.pkl / *_neg.pkl).
+DATA_DIR = "./RNA-graph-picklesmorepos/"
+
 now = time.localtime()
 s = "%04d-%02d-%02d %02d:%02d:%02d" % (now.tm_year, now.tm_mon, now.tm_mday, now.tm_hour, now.tm_min, now.tm_sec)
 print (s)
@@ -29,8 +38,8 @@ pos_list=[]
 neg_list=[]
 data_list=[]
 for line in Lines:
-	pos_list.extend(glob.glob("/home/kihara/modyd/Desktop/RNA_GNN_Nov11/RNA-graph-picklesmorepos/"+line.strip()+"_pos.pkl"))
-	neg_list.extend(glob.glob("/home/kihara/modyd/Desktop/RNA_GNN_Nov11/RNA-graph-picklesmorepos/"+line.strip()+"_neg.pkl"))
+	pos_list.extend(glob.glob(DATA_DIR+line.strip()+"_pos.pkl"))
+	neg_list.extend(glob.glob(DATA_DIR+line.strip()+"_neg.pkl"))
 random.shuffle(neg_list)
 random.shuffle(pos_list)
 for i in pos_list:
@@ -41,9 +50,6 @@ for i in pos_list:
 	for coord,graph in ((newdict.items())):
 		graph['key']=coord+i[-12:-8]
 		data_list.append(graph)
-		#print(graph.keys())
-	#if(len(data_list)>31):
-		#break
 print(len(data_list))
 for i in neg_list:
 	with open(i, 'rb') as f:
@@ -53,7 +59,6 @@ for i in neg_list:
 	for coord,graph in ((newdict.items())):
 		graph['key']=coord+i[-12:-8]
 		data_list.append(graph)
-		#print(graph.keys())
 	if(len(data_list)>500000):
 		break
 print(len(data_list))
@@ -88,8 +93,7 @@ batch_size = args.batch_size
 save_dir = args.save_dir
 
 #make save dir if it doesn't exist
-if not os.path.isdir(save_dir):
-    os.system('mkdir ' + save_dir)
+os.makedirs(save_dir, exist_ok=True)
 
 #read data. data is stored in format of dictionary. Each key has information about protein-ligand complex.
 #with open (args.train_keys, 'rb') as fp:
@@ -131,7 +135,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
 #loss function
 loss_fn = nn.BCELoss()
-np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
+warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
 a=[]
 b=[]
 c=[]

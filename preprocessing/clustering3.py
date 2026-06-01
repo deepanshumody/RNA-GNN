@@ -1,3 +1,11 @@
+"""Exploratory clustering step 3 (reference only).
+
+This script performs agglomerative clustering on a precomputed 2D distance
+matrix and writes the resulting PDB-id clusters to a text file. It is an
+exploratory/reference notebook dump and is not part of the production pipeline;
+it may rely on undefined names (e.g. ``pdb_id_list``) and is not guaranteed to
+run as-is.
+"""
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 from collections import defaultdict

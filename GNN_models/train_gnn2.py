@@ -1,3 +1,9 @@
+"""Variant of train_gnn.py for GCN-based graph property prediction on RNA graphs.
+
+Unlike train_gnn.py, this variant loads pre-saved PyTorch tensor graphs from
+disk (``./saved_tensors/``) instead of rebuilding them, and subsamples a single
+negative graph per file to balance the dataset against the positive examples.
+"""
 from sklearn.metrics import RocCurveDisplay
 from ogb.graphproppred import Evaluator
 import matplotlib.pyplot as plt
@@ -6,7 +12,6 @@ import networkx as nx
 import numpy as np
 import torch
 from tqdm import tqdm
-print(torch.__version__)
 import os
 import pandas as pd
 import torch.nn.functional as F
@@ -31,9 +36,7 @@ for line in Lines:
 	neg_list.extend(glob.glob("./saved_tensors/"+line.strip()+"neg_graph.pt"))
 data_list=[]
 pdb4RUM_list=torch.load('pd4rum_graphs.pt')
-#print(pos_list)
 for j,i in enumerate(neg_list):
-	print(j)
 	y = torch.load(i)
 	data_list.extend(random.sample(y,1))
 for i in pos_list:
@@ -41,12 +44,10 @@ for i in pos_list:
 	data_list.extend(y)
 
 random.shuffle(data_list)
-#print(data_list[0])
 print(len(data_list))
 train_loader = DataLoader(data_list[0:int(0.8*len(data_list))], batch_size=32, shuffle=True, num_workers=0)
 valid_loader = DataLoader(data_list[int(0.8*len(data_list)):int(0.9*len(data_list))], batch_size=32, shuffle=False, num_workers=0)
 test_loader = DataLoader(data_list[int(0.9*len(data_list)):], batch_size=32, shuffle=False, num_workers=0)
-#negative_only_loader = DataLoader(negative_only_test_list, batch_size=32, shuffle=False, num_workers=0)
 pdb4RUM_loader = DataLoader(pdb4RUM_list, batch_size=32, shuffle=True, num_workers=0)
 class GCN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers,
@@ -106,7 +107,6 @@ args = {
   }
 
 from torch_geometric.nn import global_add_pool, global_mean_pool
-#from ogb.graphproppred.mol_encoder import AtomEncoder
 full_atom_feature_dims = [2 for i in range(56)]
 class AtomEncoder(torch.nn.Module):
 
@@ -203,16 +203,12 @@ def eval(model, device, loader, evaluator, save_model_results=False, save_file=N
             y_true.append(batch.y.view(pred.shape).detach().cpu())
             y_pred.append(pred.detach().cpu())
             pdb_id.append(batch.pdb)
-            coord=coord+(batch.coords) 
-            #print("ok",batch.pdb)
-      
+            coord=coord+(batch.coords)
+
     coord=np.array(coord)
     pdb_id=np.array(np.concatenate(pdb_id).flat)
     y_true = torch.cat(y_true, dim = 0).numpy()
     y_pred = torch.cat(y_pred, dim = 0).numpy()
-    #print(y_true.shape)
-    #print(pdb_id.shape)
-    #print(coord.shape)
     input_dict = {"y_true": y_true, "y_pred": y_pred}
 
     if save_model_results:
@@ -228,7 +224,7 @@ def eval(model, device, loader, evaluator, save_model_results=False, save_file=N
         # Save to csv
         df.to_csv('preds_RNA' + save_file + '.csv', sep=',', index=False)
         RocCurveDisplay.from_predictions(data['y_true'], data['y_pred'])
-        plt.savefig("squares.png")
+        plt.savefig("roc_curve.png")
     return evaluator.eval(input_dict)
 model = GCN_Graph(args['hidden_dim'],
               1, args['num_layers'],
@@ -264,7 +260,6 @@ train_acc = eval(best_model, device, train_loader, evaluator)['rocauc']
 valid_acc = eval(best_model, device, valid_loader, evaluator, save_model_results=True, save_file="validf")['rocauc']
 test_acc  = eval(best_model, device, test_loader, evaluator, save_model_results=True, save_file="testf")['rocauc']
 torch.save(best_model.state_dict(), "./best_modelf.pth")
-#negative_only_acc = eval(best_model, device, negative_only_loader, evaluator, save_model_results=True, save_file="negonly")['rocauc']
 pdb4RUM_acc = eval(best_model, device, pdb4RUM_loader, evaluator, save_model_results=True, save_file="4RUMf")['rocauc']
 
 print(f'Best model: '

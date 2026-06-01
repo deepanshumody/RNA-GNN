@@ -1,207 +1,240 @@
-# RNA-Metal-Ion-GNN
+# RNA–Metal Ion GNN
 
-This repository contains two primary GNN-based architectures for predicting metal ion binding sites in RNA:
+**Predicting Mg²⁺ binding sites in RNA 3D structures with graph neural networks.**
 
-1. **GCN (Graph Convolutional Network)**
-2. **GNN-DTI** (based on [Wang et al., 2019](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00387))
+[![CI](https://github.com/deepanshumody/RNA-GNN/actions/workflows/ci.yml/badge.svg)](https://github.com/deepanshumody/RNA-GNN/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![PyG](https://img.shields.io/badge/PyTorch_Geometric-3C2179)](https://pytorch-geometric.readthedocs.io/)
+[![Streamlit Demo](https://img.shields.io/badge/Live_Demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://gnnrna.streamlit.app/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-The project expands on the approach of encoding RNA structures as graphs and applying neural networks for site prediction.
-The [Demo](https://gnnrna.streamlit.app/) can be viewed at the link.
+Metal ions such as Mg²⁺ are essential cofactors that stabilize RNA tertiary structure and enable catalysis, yet locating their binding sites from structure alone is hard. This project frames the problem as **graph classification**: tile the space around an RNA molecule with candidate ion positions, build a local atomic graph around each candidate, and train a GNN to score how likely that position is to bind a metal ion.
 
----
+On the bundled 1FUF structure the Graph Convolutional Network achieves **ROC&nbsp;AUC ≈ 0.95**, ranking the single true Mg²⁺ site within the **top ~5%** of ~1,500 candidate positions — a useful candidate-site *filter* under extreme class imbalance. An [interactive demo](https://gnnrna.streamlit.app/) renders its predictions in 3D alongside the experimentally observed ions.
 
-## Table of Contents
-1. [Introduction](#introduction)
-2. [Key Features](#key-features)
-3. [Project Overview](#project-overview)
-    - [GCN](#gcn)
-    - [GNN-DTI](#gnn-dti)
-4. [Installation](#installation)
-5. [Generating Non-Redundant RNA List](#generating-non-redundant-rna-list)
-6. [Creating the Dataset](#creating-the-dataset)
-    - [Dataset Variants](#dataset-variants)
-7. [Usage](#usage)
-8. [Training](#training)
-    - [3.a) Training GCN](#3a-training-gcn)
-    - [3.b) Training GNN-DTI](#3b-training-gnn-dti)
-9. [Testing](#testing)
-    - [4.a) Testing GCN](#4a-testing-gcn)
-    - [4.b) Testing GNN-DTI](#4b-testing-gnn-dti)
-10. [Slides](#slides)
-11. [License](#license)
-12. [Contact](#contact)
+> **▶ Try it live:** **https://gnnrna.streamlit.app/**
+
+<p align="center">
+  <img src="assets/demo.png" alt="Mol* 3D viewer: experimentally observed ions (left) vs. GNN-predicted Mg²⁺ binding sites in green (right) on the 1FUF ribozyme" width="100%">
+  <br>
+  <em>The deployed app on the 1FUF ribozyme — experimentally observed ions (left) vs. the GNN's predicted Mg²⁺ binding sites (right, green dots).</em>
+</p>
 
 ---
 
-## Introduction
+## Highlights
 
-Metal ions are crucial cofactors in many RNA-related biochemical processes. Accurately predicting the location of metal ion binding sites in RNA can aid in understanding RNA structure and function, accelerating both academic research and potential therapeutic applications.
-
-This repository uses graph neural networks to model potential metal ion binding sites:
-- **GCN** uses traditional graph convolutional layers.
-- **GNN-DTI** follows drug-target interaction paradigms to capture more complex relationship patterns.
-
----
-
-## Key Features
-
-1. **Graph Construction**: Scripts to convert RNA structures into graph data (nodes represent nucleotides/atoms, edges represent connectivity or distance thresholds).
-2. **Multiple Dataset Variants**: Provides different ways of placing metal ions and negative points, allowing for flexible experimentation.
-3. **Scalable Training**: Scripts for training both GCN and GNN-DTI frameworks.
-4. **Customizable**: Easy to tweak hyperparameters, adjacency strategies, or input data.
-5. **Reproducibility**: Steps to generate the exact same list of PDB IDs (nonredundantRNA.txt) included.
+- **Two GNN architectures** for the same task — a graph-convolutional baseline (GCN) and a gated graph-attention model adapted from the GNN-DTI drug–target framework ([Lim et al., 2019](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00387)).
+- **End-to-end pipeline** from raw PDB structures → candidate-site graphs → trained model → predicted ions merged back into a `.pdb` for visualization.
+- **Imbalance-aware evaluation:** with positives at ~0.07% of candidate sites, results are framed as a ranking/filtering task — ROC AUC ≈ 0.95 reported alongside PR-AUC and precision/recall, not a single cherry-picked number.
+- **Deployed demo** — a Streamlit + Mol\* app that runs inference on the 1FUF ribozyme and shows predicted vs. real ions side by side.
+- **Reproducible dataset construction**, including the scripts used to derive the non-redundant set of RNA structures.
 
 ---
 
-## Project Overview
+## Results
 
-### GCN
-The **GCN** model is implemented primarily in `train_gnn.py`. It treats potential metal ion binding sites as nodes on a 3D grid over the RNA structure. Each site is classified in a binary manner: binding vs. nonbinding.
+Locating ion sites is an **extreme class-imbalance** problem: on the bundled 1FUF structure only **1 of 1,484** candidate positions is a true Mg²⁺ site (≈ 0.07% positive). The GCN is therefore best read as a **ranker / filter** rather than a hard classifier, and is evaluated with imbalance-aware metrics rather than ROC AUC alone.
 
-### GNN-DTI
-The **GNN-DTI** model is adapted from the drug-target interaction approach ([Wang et al., 2019](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00387)). It is located in the `model_GNN_DTI` folder with a primary training script `train.py`. This architecture may capture more nuanced features and interactions.
+<p align="center">
+  <img src="assets/roc_curve.png" alt="ROC curve for the GCN ion-binding classifier on 1FUF (AUC ≈ 0.95)" width="460">
+</p>
+
+| Metric — GCN on the 1FUF demo structure | Value | How to read it |
+| --- | --- | --- |
+| ROC AUC | **0.95** | ranks the true site near the top of all candidates |
+| PR-AUC (average precision) | 0.01 | low by construction when positives are ~0.07% |
+| Recall @ Youden's-J threshold | 100% (1 / 1) | the true site is recovered |
+| Precision @ same threshold | 1.4% (1 / 73) | catching it costs ~72 false positives |
+| Enrichment | true site in **top ~5%** | narrows ~1,500 candidates → ~70 for follow-up |
+
+**Why report both?** ROC AUC is optimistic under heavy imbalance, so it's paired with PR-AUC and precision/recall for an honest picture. The practical value is as a first-pass filter that shrinks the candidate search space for downstream analysis. Predictions are binarized at the threshold that maximizes Youden's J (TPR − FPR), which favors recall.
+
+> These figures are for the single bundled 1FUF structure (the demo). The GNN-DTI variant logs ROC-AUC / PR per epoch during training and is included as an exploratory alternative.
+
+---
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["RNA PDB<br/>structure"] --> B["Strip HETATM<br/>(clean RNA only)"]
+    B --> C["Tile 3D grid of<br/>candidate ion sites"]
+    C --> D["Per candidate:<br/>build local atom graph<br/>(nodes = atoms, edges =<br/>bonds + spatial proximity)"]
+    D --> E{"GNN<br/>classifier"}
+    E -->|GCN| F["binding score"]
+    E -->|GNN-DTI| F
+    F --> G["Threshold<br/>(Youden's J)"]
+    G --> H["Merge predicted ions<br/>as HETATM → PDB"]
+    H --> I["3D visualization<br/>(Mol* demo)"]
+```
+
+1. **Graph construction.** Each RNA structure is read with RDKit. A 3D grid of candidate ion positions is laid over the molecule, and for every candidate a subgraph is extracted from the atoms within range — nodes carry chemical atom features, edges encode covalent bonds and spatial proximity. The grid point nearest a real crystallographic ion is labeled positive.
+2. **Models.**
+   - **GCN** — stacked `GCNConv` layers with batch norm and dropout, mean-pooled to a graph embedding and passed through a linear head (binary output). Implemented in `GNN_models/train_gnn.py`.
+   - **GNN-DTI** — a gated graph-attention network with a learned distance-based adjacency (Gaussian over interatomic distances), adapted from the drug–target interaction model of Lim et al. (2019). Implemented in `GNN_models/GNN-DTI/`.
+3. **Inference & visualization.** The trained model scores every candidate site in a new structure; high-scoring positions are merged back into the cleaned PDB as new `HETATM` records so predicted and experimental ions can be compared directly in 3D.
+
+---
+
+## Repository structure
+
+```
+RNA-GNN/
+├── moleculestreamlit.py          # Streamlit + Mol* demo app (inference + 3D viewer)
+├── createpredictedionpdb.py      # Merge predicted coordinates into a PDB as HETATM records
+├── best_model.pth                # Trained GCN checkpoint (used by the demo)
+│
+├── GNN_models/
+│   ├── train_gnn.py              # GCN training — builds graphs from candidate-site pickles
+│   ├── train_gnn1.py             #   variant: loads precomputed graph tensors
+│   ├── train_gnn2.py             #   variant: precomputed tensors + negative subsampling
+│   ├── predfrommodel.py          # GCN inference on a single RNA structure
+│   └── GNN-DTI/                  # Gated graph-attention model (Lim et al. 2019)
+│       ├── gnn.py                #   model + FocalLoss
+│       ├── layers.py             #   GAT_gate graph-attention layer
+│       ├── dataset.py            #   collate_fn + weighted sampler
+│       ├── train.py / test.py    #   training / evaluation
+│       └── utils.py
+│
+├── dataset_creation/             # PDB → candidate-site graph pickles (4 labeling strategies)
+│   ├── gnn_rna.py                #   3Å grid, nearest point to ion = positive
+│   ├── gnn_rna_0A.py             #   grid stops at the molecular surface
+│   ├── gnn_rna_autodock.py       #   AutoDock Vina–placed candidate points
+│   └── gnn_rna_morepos.py        #   8 grid points around each ion = positive
+│
+├── preprocessing/                # Build the non-redundant RNA list (exploratory/reference)
+│   ├── clustering1.py … clustering3.py
+│   └── bestresolutionfromcluster.py
+│
+├── data/                         # Sample data for the demo (1FUF) + curated lists
+│   ├── RNA-only-PDB/ , RNA-only-PDB-clean/ , RNA-graph-pickles/
+│   ├── Mg_ions.sdf , nonredundantRNA.txt , OnlyRNAlist.txt
+│   └── preds_RNA1FUFf.csv
+│
+└── assets/roc_curve.png          # ROC curve on the 1FUF demo (AUC ≈ 0.95)
+```
 
 ---
 
 ## Installation
 
-1. **Clone the repository**:
-   ```bash
-   git clone <repo_url>
-   cd RNA-GNN
-   ```
-2. **Set up a Python environment (recommended)**:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # on Linux/Mac
-   # or
-   venv\Scripts\activate   # on Windows
-   ```
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
----
+```bash
+git clone https://github.com/deepanshumody/RNA-GNN.git
+cd RNA-GNN
 
-## Generating Non-Redundant RNA List
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 
-To reproduce the exact list of PDBs used for training:
-1. **Input**: `OnlyRNAlist.txt` containing comma-separated RNA-only PDB IDs from the RCSB PDB.
-2. **Scripts**: `clustering1.py`, `clustering2.py`, `clustering3.py`, `bestresolutionfromcluster.py` (run in this order).
-3. **Output**: `nonredundantRNA.txt` containing a list of non-redundant RNAs based on sequence with resolution better than 6Å.
+pip install -r requirements.txt
+```
 
-This step is optional as the `nonredundantRNA.txt` file is already provided.
+> **Note:** install [PyTorch](https://pytorch.org/) and [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) with the build that matches your CUDA / CPU setup before (or alongside) the other requirements.
+>
+> For a known-good, fully pinned set of versions (Python 3.12), use [`requirements-lock.txt`](requirements-lock.txt).
 
 ---
 
-## Creating the Dataset
+## Quickstart — run the demo locally
 
-To create your dataset, you must:
-1. Download the PDB files of your RNA structures and store them in `RNA-only-PDB` (within the working directory).
-2. Run **one** of the following scripts to generate data pickles:
-   - `gnn_rna.py`
-   - `gnn_rna_0A.py`
-   - `gnn_rna_autodock.py`
-   - `gnn_rna_morepos.py`
+The demo loads the released checkpoint (`best_model.pth`), runs inference on the bundled 1FUF structure, and shows predicted vs. real ions in an interactive 3D viewer:
 
-Each script differs in how it places potential ion locations and labels positives. For instance, `gnn_rna_morepos.py` considers 8 cubic grid points as positive.
+```bash
+streamlit run moleculestreamlit.py
+```
 
-### Dataset Variants
-
-1. **RNA-graph-pickles**:
-   - Points placed on a 3Å grid over the entire molecule.
-   - Nearest grid point to the actual ion location is considered positive.
-   - ~3000 positive points, ~1,000,000 negative points.
-2. **RNA-graph-pickles0A**:
-   - Similar to above but stops at 0Å from the molecule's outer edge.
-   - ~2500 positive points, ~500,000 negative points.
-3. **RNA-graph-pickles-autodock**:
-   - Uses Autodock Vina to place points over the molecule.
-4. **RNA-graph-picklesmorepos**:
-   - 8 grid points around the actual ion location are labeled positive.
-   - ~12,000 positive points, ~1,000,000 negative points.
-
-**MG_ideal.sdf** provides the structure of the binding ion for reference.
+(Or skip setup entirely and open the hosted version: **https://gnnrna.streamlit.app/**.)
 
 ---
 
-## Usage
+## Reproducing the pipeline
 
-1. **Set environment**:
-   - Make sure your dataset pickles are created and stored in the correct folders.
-2. **Adjust paths**:
-   - Update input folder paths within the training and testing scripts (`train_gnn.py`, `train.py`, etc.) based on which dataset you want to use.
-3. **Run training**:
-   - GCN: `python train_gnn.py`
-   - GNN-DTI: `CUDA_VISIBLE_DEVICES="x" python train.py` (inside `model_GNN_DTI` folder)
-4. **Run testing**:
-   - GCN: `python predfrommodel.py`
-   - GNN-DTI: `CUDA_VISIBLE_DEVICES="x" python test.py`
+### 1. Create the dataset
 
----
+Place RNA-only `.pdb` files in `RNA-only-PDB/`, then run **one** of the dataset-creation scripts depending on the labeling strategy you want:
 
-## Training
+```bash
+python dataset_creation/gnn_rna.py            # 3Å grid (default)
+# or gnn_rna_0A.py / gnn_rna_autodock.py / gnn_rna_morepos.py
+```
 
-### 3.a) Training GCN
+Each writes per-structure graph pickles (`<pdb>_pos.pkl`, `<pdb>_neg.pkl`). Dataset variants:
 
-- **Script**: `train_gnn.py`
-- **Usage**:
-  ```bash
-  python train_gnn.py
-  ```
-- The best model is saved automatically. To evaluate on individual PDB files, use `predfrommodel.py`.
+| Variant            | Candidate placement                          | ~Positives | ~Negatives |
+| ------------------ | -------------------------------------------- | ---------- | ---------- |
+| `gnn_rna`          | 3Å grid; nearest point to ion = positive     | ~3,000     | ~1,000,000 |
+| `gnn_rna_0A`       | grid stops at the molecular surface          | ~2,500     | ~500,000   |
+| `gnn_rna_autodock` | AutoDock Vina–placed candidate points        | —          | —          |
+| `gnn_rna_morepos`  | 8 grid points around each ion = positive     | ~12,000    | ~1,000,000 |
 
-### 3.b) Training GNN-DTI
+> A Mg²⁺ ideal-geometry SDF (e.g. `data/Mg_ions.sdf`) is used as the ligand template when building graphs.
 
-- **Folder**: `model_GNN_DTI`
-- **Script**: `train.py`
-- **Usage**:
-  ```bash
-  CUDA_VISIBLE_DEVICES="x" python train.py   # x is the GPU index
-  ```
-- All models are saved; use `test.py` for individual structure tests.
+### 2. Train
 
----
+```bash
+# GCN
+python GNN_models/train_gnn.py
 
-## Testing
+# GNN-DTI (set the GPU index)
+CUDA_VISIBLE_DEVICES=0 python GNN_models/GNN-DTI/train.py
+```
 
-### 4.a) Testing Individual Structures (GCN)
+The best GCN checkpoint is saved to `best_model.pth`. Update the data-directory constants near the top of each script to point at your generated pickles.
 
-1. Update any path variables in `predfrommodel.py`.
-2. Run:
-   ```bash
-   python predfrommodel.py
-   ```
+### 3. Predict / evaluate
 
-### 4.b) Testing Individual Structures (GNN-DTI)
+```bash
+# GCN — single structure
+python GNN_models/predfrommodel.py
 
-1. Update the path to your dataset.
-2. Run:
-   ```bash
-   CUDA_VISIBLE_DEVICES="x" python test.py
-   ```
+# GNN-DTI
+CUDA_VISIBLE_DEVICES=0 python GNN_models/GNN-DTI/test.py
+```
+
+### (Optional) Rebuild the non-redundant RNA list
+
+The `preprocessing/` scripts (`clustering1.py` → `clustering3.py` → `bestresolutionfromcluster.py`) reproduce `nonredundantRNA.txt` — RNAs deduplicated by sequence similarity, keeping the best resolution (< 6 Å) per cluster — starting from `data/OnlyRNAlist.txt`. These are exploratory/reference scripts and may need light adaptation to your environment; the resulting list is already provided.
 
 ---
 
-## Slides
+## Notes & limitations
 
-Additional background and results can be found in the following slides:
+- Reported metrics are for the single bundled **1FUF** structure; aggregate metrics across the full training corpus are not included in this repository. Given the extreme class imbalance (positives ≈ 0.07% of candidate sites), the model is intended as a candidate-site **ranker / filter**, not a precise point locator.
+- Results are reported for the GCN; the GNN-DTI variant is an exploratory alternative and its metrics are logged per epoch during training rather than as a single headline number.
+- The demo ships with one structure (1FUF) for a fast, self-contained showcase; the full training corpus is built from the non-redundant RNA list.
+- Several `dataset_creation/` and `preprocessing/` scripts began life as research notebooks; they are included for transparency and reproducibility of the data pipeline.
+
+---
+
+## References
+
+- Lim, J. et al. *Predicting Drug–Target Interaction Using a Novel Graph Neural Network with 3D Structure-Embedded Graph Representation.* **J. Chem. Inf. Model.** 2019. [DOI: 10.1021/acs.jcim.9b00387](https://pubs.acs.org/doi/10.1021/acs.jcim.9b00387) — basis for the GNN-DTI architecture.
+
+### Slides
 
 - [Slide Deck 1](https://purdue0-my.sharepoint.com/:p:/g/personal/modyd_purdue_edu/EXJN6pxMfNZBnivvTjUdbCABFum4tNid0VJ6X5CW7WLyXA?e=6eIJPs)
 - [Slide Deck 2](https://purdue0-my.sharepoint.com/:p:/g/personal/modyd_purdue_edu/EdZh7vnDzwZClZ6i372E_DUB3SrtWZm17wQpZd03VlAa8w?e=kDzZlA)
 
 ---
 
-## License
+## Development
 
-This project is licensed under the [MIT License](LICENSE).
+```bash
+pip install -r requirements-dev.txt
+ruff check .      # lint (critical-error rules)
+pytest -q         # tests
+```
+
+[GitHub Actions CI](.github/workflows/ci.yml) runs linting, byte-compilation, and the test suite on every push and pull request. Tests cover the PDB-merge formatting and a GCN forward-pass smoke test (the latter skips automatically where the deep-learning stack isn't installed).
 
 ---
+
+## License
+
+Released under the [MIT License](LICENSE).
 
 ## Contact
 
-- **Author**: [Deepanshu Mody](https://github.com/deepanshumody)
-- For questions, feel free to open an issue or reach out directly.
-
----
-
+**Deepanshu Mody** · [GitHub](https://github.com/deepanshumody)
+Questions and contributions welcome — open an issue or reach out directly.

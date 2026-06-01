@@ -1,3 +1,8 @@
+"""Graph neural network layers for the GNN-DTI model.
+
+This module defines the gated graph attention layer (``GAT_gate``) used to
+propagate and aggregate node features over the molecular interaction graph.
+"""
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
@@ -5,10 +10,16 @@ from utils import *
 import time
 
 class GAT_gate(torch.nn.Module):
+    """Gated graph attention layer.
+
+    Computes attention coefficients over graph neighbours (masked by the
+    adjacency matrix), aggregates neighbour features, and gates the result
+    against the original node features so each node retains a learnable mix of
+    its prior representation and the attention-aggregated update.
+    """
     def __init__(self, n_in_feature, n_out_feature):
         super(GAT_gate, self).__init__()
         self.W = nn.Linear(n_in_feature, n_out_feature)
-        #self.A = nn.Parameter(torch.Tensor(n_out_feature, n_out_feature))
         self.A = nn.Parameter(torch.zeros(size=(n_out_feature, n_out_feature)))
         self.gate = nn.Linear(n_out_feature*2, 1)
         self.leakyrelu = nn.LeakyReLU(0.2)
@@ -22,8 +33,6 @@ class GAT_gate(torch.nn.Module):
         zero_vec = -9e15*torch.ones_like(e)
         attention = torch.where(adj > 0, e, zero_vec)
         attention = F.softmax(attention, dim=1)
-        #attention = F.dropout(attention, self.dropout, training=self.training)
-        #h_prime = torch.matmul(attention, h)
         attention = attention*adj
         h_prime = F.relu(torch.einsum('aij,ajk->aik',(attention, h)))
        

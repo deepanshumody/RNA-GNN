@@ -1,3 +1,15 @@
+"""Exploratory / reference script.
+
+Final preprocessing step that selects the best-resolution structure per
+sequence-similarity cluster, producing ``nonredundantRNA.txt``. For each
+cluster (a comma-separated line in ``OnlyRNAlist.txt``) it parses every
+candidate PDB structure, picks the one with the lowest (best) resolution,
+and writes its PDB id to the output if the resolution is acceptable.
+
+This is an exploratory data-preparation script kept for reference; it is not
+part of the importable package API.
+"""
+
 from Bio.PDB import *
 count=0
 with open("OnlyRNAlist.txt", "r") as inputFile,open("nonredundantRNA.txt","w") as outFile:
