@@ -12,12 +12,13 @@ import pickle
 import networkx as nx
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch_geometric.utils.convert import from_networkx
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import global_mean_pool
-from torch_geometric.nn import GCNConv
-from sklearn.metrics import roc_curve, roc_auc_score
+
+# Shared GCN model — single source of truth across training, inference and demo.
+from gcn_model import GCN_Graph
+# Imbalance-aware metrics: ROC-AUC alone is misleading at ~0.07% positives.
+from rna_metrics import binding_site_metrics
 
 # For merging predicted coordinates into a PDB file
 from createpredictedionpdb import write_merged_pdb_with_hetatms
@@ -189,7 +190,7 @@ def render_hero():
             <span class="badge live"><span class="pulse"></span>Live inference</span>
             <span class="badge">GCN</span>
             <span class="badge">1FUF ribozyme</span>
-            <span class="badge">ROC&nbsp;AUC&nbsp;≈&nbsp;0.95</span>
+            <span class="badge">ROC&nbsp;AUC&nbsp;0.95&nbsp;·&nbsp;in-sample</span>
           </div>
         </div>
         """,
@@ -226,89 +227,17 @@ def render_footer():
 
 
 ##################################################
-#              Model Definitions
-##################################################
-full_atom_feature_dims = [2 for _ in range(56)]
-
-class AtomEncoder(torch.nn.Module):
-    def __init__(self, emb_dim):
-        super().__init__()
-        self.atom_embedding_list = torch.nn.ModuleList()
-        for dim in full_atom_feature_dims:
-            emb = torch.nn.Embedding(dim, emb_dim)
-            torch.nn.init.xavier_uniform_(emb.weight.data)
-            self.atom_embedding_list.append(emb)
-
-    def forward(self, x):
-        x_embedding = 0
-        for i in range(x.shape[1]):
-            x_embedding += self.atom_embedding_list[i](x[:, i])
-        return x_embedding
-
-
-class GCN(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers, dropout, return_embeds=False):
-        super().__init__()
-        self.convs = torch.nn.ModuleList(
-            [GCNConv(in_channels=input_dim, out_channels=hidden_dim)]
-            + [GCNConv(in_channels=hidden_dim, out_channels=hidden_dim) for _ in range(num_layers - 2)]
-            + [GCNConv(in_channels=hidden_dim, out_channels=output_dim)]
-        )
-        self.bns = torch.nn.ModuleList(
-            [torch.nn.BatchNorm1d(num_features=hidden_dim) for _ in range(num_layers - 1)]
-        )
-        self.dropout = dropout
-        self.return_embeds = return_embeds
-        self.softmax = torch.nn.LogSoftmax(dim=-1)
-
-    def reset_parameters(self):
-        for conv in self.convs:
-            conv.reset_parameters()
-        for bn in self.bns:
-            bn.reset_parameters()
-
-    def forward(self, x, edge_index):
-        for conv, bn in zip(self.convs[:-1], self.bns):
-            x = bn(conv(x, edge_index))
-            x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.convs[-1](x, edge_index)
-        if self.return_embeds:
-            return x
-        else:
-            return self.softmax(x)
-
-
-class GCN_Graph(torch.nn.Module):
-    """
-    A graph-level GCN that pools node embeddings into a single graph embedding,
-    then classifies whether a coordinate patch is likely to bind a metal ion.
-    """
-    def __init__(self, hidden_dim, output_dim, num_layers, dropout):
-        super().__init__()
-        self.node_encoder = AtomEncoder(hidden_dim)
-        self.gnn_node = GCN(hidden_dim, hidden_dim, hidden_dim, num_layers, dropout, return_embeds=True)
-        self.pool = global_mean_pool  # Summarize node embeddings
-        self.linear = torch.nn.Linear(hidden_dim, output_dim)
-
-    def reset_parameters(self):
-        self.gnn_node.reset_parameters()
-        self.linear.reset_parameters()
-
-    def forward(self, batched_data):
-        x, edge_index, batch = batched_data.x, batched_data.edge_index, batched_data.batch
-        x = self.node_encoder(x)
-        x = self.gnn_node(x, edge_index)
-        x = self.pool(x, batch)
-        return self.linear(x)
-
-##################################################
 #           Utility / Helper Functions
 ##################################################
+# The GCN_Graph model lives in gcn_model.py (shared with the training and
+# inference scripts), so the demo and the trained checkpoint never drift apart.
 @st.cache_resource(show_spinner=False)
-def load_model(_checkpoint_path, device, hidden_dim, num_layers, dropout):
+def load_model(_checkpoint_path, device, hidden_dim, num_layers, dropout, num_features):
     """Load the trained GCN checkpoint once and keep it in memory across reruns."""
-    model = GCN_Graph(hidden_dim=hidden_dim, output_dim=1, num_layers=num_layers, dropout=dropout).to(device)
+    model = GCN_Graph(
+        hidden_dim=hidden_dim, output_dim=1, num_layers=num_layers,
+        dropout=dropout, num_features=num_features,
+    ).to(device)
     checkpoint = torch.load(_checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint)
     return model
@@ -417,8 +346,12 @@ def main():
     # ---- Load model + data (cached: instant on rerun) ----
     try:
         with st.spinner("Loading model & 1FUF graph data…"):
-            best_model = load_model(checkpoint_path, device, args['hidden_dim'], args['num_layers'], args['dropout'])
             pyg_list = load_graphs(data_file)
+            num_features = int(pyg_list[0].x.shape[1])  # adapt to the data's feature width
+            best_model = load_model(
+                checkpoint_path, device, args['hidden_dim'], args['num_layers'],
+                args['dropout'], num_features,
+            )
             pdb_loader = DataLoader(pyg_list, batch_size=32, shuffle=False, num_workers=0)
     except Exception as e:
         st.error(f"Failed to load model or data: {e}")
@@ -427,36 +360,39 @@ def main():
     # ---- Inference ----
     y_true, y_pred, coords = eval_with_outputs(best_model, device, pdb_loader)
 
-    # Threshold via Youden's J statistic (favors recall under heavy imbalance)
-    fpr, tpr, thresholds = roc_curve(y_true, y_pred)
-    youden_j = tpr - fpr
-    best_threshold = thresholds[np.argmax(youden_j)]
+    # Imbalance-aware metrics + the Youden-J threshold (favors recall) computed in
+    # one place. NOTE: 1FUF is part of the training corpus, so these are an
+    # *in-sample* sanity check, not a held-out generalisation estimate.
+    metrics = binding_site_metrics(y_true, y_pred)
+    best_threshold = metrics["youden_threshold"]
+    if np.isnan(best_threshold):
+        best_threshold = 0.0
     predicted_positive = (y_pred >= best_threshold)
     positive_coords = coords[predicted_positive]
-
-    try:
-        auc = roc_auc_score(y_true, y_pred)
-        auc_str = f"{auc:.3f}"
-    except Exception:
-        auc_str = "—"
+    auc_str = "—" if np.isnan(metrics["roc_auc"]) else f"{metrics['roc_auc']:.3f}"
+    prauc_str = "—" if np.isnan(metrics["pr_auc"]) else f"{metrics['pr_auc']:.3f}"
+    enrich_str = "—" if np.isnan(metrics["enrichment_top_fraction"]) else f"{metrics['enrichment_top_fraction']:.1%}"
 
     section(
         "Inference · 1FUF ribozyme",
         "Scoring every candidate site",
-        "Each of the candidate grid positions around the RNA is scored by the GCN. "
-        "Predictions are binarized at the threshold that maximizes Youden's J (TPR − FPR).",
+        "Every candidate grid position around the RNA is scored by the GCN and binarized at the "
+        "Youden-J threshold (TPR − FPR). 1FUF is part of the training corpus, so these numbers are an "
+        f"in-sample sanity check (PR-AUC {prauc_str} — low by construction at ~0.07% positives); the "
+        "practical value is as a filter that ranks the true site into a short shortlist.",
     )
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Candidate sites", f"{len(y_true):,}")
     m2.metric("Predicted ion sites", f"{len(positive_coords):,}")
-    m3.metric("ROC AUC", auc_str)
-    m4.metric("Youden's J threshold", f"{best_threshold:.2f}")
+    m3.metric("ROC AUC · in-sample", auc_str)
+    m4.metric("True site within top", enrich_str)
 
     with st.expander("Inspect the loaded graph data"):
         st.markdown(
             '<p class="prose">Each candidate coordinate is a sub-graph: <strong>nodes</strong> are atoms '
-            '(with chemical features), <strong>edges</strong> encode covalent bonds and spatial proximity. '
+            '(with chemical features), <strong>edges</strong> are covalent bonds — the deployed GCN uses the '
+            'covalent adjacency; the distance-based geometry is used by the GNN-DTI variant. '
             f'Loaded <code>{len(pyg_list)}</code> candidate graphs for 1FUF.</p>',
             unsafe_allow_html=True,
         )
@@ -529,7 +465,8 @@ def main():
             <h4>Graph construction</h4>
             <p>RNA structures are read with RDKit. A 3D grid of candidate ion positions is laid over the
             molecule, and each candidate becomes a local atomic graph — nodes are atoms with chemical
-            features, edges encode bonds and spatial proximity.</p>
+            features, edges are covalent bonds (a distance-based geometry is also stored, and used by the
+            GNN-DTI variant).</p>
           </div>
           <div class="card">
             <div class="n">02</div>

@@ -2,3 +2,8 @@
 #   pip install -r requirements-dev.txt
 pytest
 ruff
+
+# Test-runtime deps for the lightweight (non-deep-learning) tests. The torch /
+# torch-geometric / rdkit tests skip automatically when those aren't installed.
+numpy
+scikit-learn

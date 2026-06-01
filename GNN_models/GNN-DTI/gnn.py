@@ -15,25 +15,33 @@ from layers import GAT_gate
 N_atom_features = 28
 
 class FocalLoss(nn.Module):
-    """Binary focal loss to down-weight easy examples during training."""
+    """Binary focal loss that down-weights easy examples during training.
+
+    The focal modulation ``(1 - p_t)**gamma`` must be applied *per example*
+    before reducing, otherwise hard and easy samples are weighted identically
+    and the loss collapses to a scaled BCE. The previous implementation reduced
+    BCE to a scalar first and then applied a single modulation, which defeated
+    the purpose; this computes BCE with ``reduction='none'`` and modulates each
+    element, matching Lin et al. (2017).
+    """
     def __init__(self, weight=None, size_average=True):
         super(FocalLoss, self).__init__()
+        self.size_average = size_average
 
     def forward(self, inputs, targets, alpha=0.8, gamma=2, smooth=1):
-        
-        #comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = torch.sigmoid(inputs)       
-        
-        #flatten label and prediction tensors
+        # Comment out the sigmoid if your model already outputs probabilities.
+        inputs = torch.sigmoid(inputs)
+
+        # Flatten label and prediction tensors.
         inputs = inputs.view(-1)
         targets = targets.view(-1)
-        
-        #first compute binary cross-entropy 
-        BCE = F.binary_cross_entropy(inputs, targets, reduction='mean')
-        BCE_EXP = torch.exp(-BCE)
-        focal_loss = alpha * (1-BCE_EXP)**gamma * BCE
-                       
-        return focal_loss
+
+        # Per-example BCE, then the per-example focal modulation.
+        bce = F.binary_cross_entropy(inputs, targets, reduction='none')
+        p_t = torch.exp(-bce)  # probability assigned to the true class
+        focal_loss = alpha * (1 - p_t) ** gamma * bce
+
+        return focal_loss.mean() if self.size_average else focal_loss.sum()
 
 class gnn(torch.nn.Module):
     """Graph neural network for drug-target interaction prediction.
@@ -60,7 +68,12 @@ class gnn(torch.nn.Module):
         
         self.mu = nn.Parameter(torch.Tensor([args.initial_mu]).float())
         self.dev = nn.Parameter(torch.Tensor([args.initial_dev]).float())
-        self.embede = nn.Linear(2*N_atom_features, d_graph_layer, bias = False)
+        # Feature width is a property of the dataset: receptor + ligand one-hot
+        # blocks, each ``n_atom_features`` wide. Read it from args so an extended
+        # atom vocabulary (e.g. adding 'Mg') trains without code changes; falls
+        # back to the released width when not provided.
+        n_atom_features = getattr(args, "n_atom_features", N_atom_features)
+        self.embede = nn.Linear(2 * n_atom_features, d_graph_layer, bias=False)
         
 
     def embede_graph(self, data):

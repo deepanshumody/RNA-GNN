@@ -91,6 +91,8 @@ if not os.path.isdir(save_dir):
 #if args.ngpu>0:
     #cmd = utils.set_cuda_visible_device(args.ngpu)
     #os.environ['CUDA_VISIBLE_DEVICES']=cmd[:-1]
+# Match the feature width the checkpoint was trained with (read from the data).
+args.n_atom_features = int(np.asarray(data_list[0]['H']).shape[1]) // 2
 model = gnn(args)
 print ('number of parameters : ', sum(p.numel() for p in model.parameters() if p.requires_grad))
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

@@ -18,12 +18,20 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import precision_recall_curve
 import argparse
+import sys
 from torch.utils.data import DataLoader
 from dataset import collate_fn, DTISampler
 import glob
 import random
 import pandas as pd
 import matplotlib.pyplot as plt
+
+# Repo-root shared helpers (structure-level split + seeding).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from rna_seed import set_seed  # noqa: E402
+from rna_splits import group_train_val_test_split  # noqa: E402
+
+set_seed(42)
 
 # Directory containing the RNA graph pickle files (*_pos.pkl / *_neg.pkl).
 DATA_DIR = "./RNA-graph-picklesmorepos/"
@@ -109,15 +117,20 @@ os.makedirs(save_dir, exist_ok=True)
 #if args.ngpu>0:
     #cmd = utils.set_cuda_visible_device(args.ngpu)
     #os.environ['CUDA_VISIBLE_DEVICES']=cmd[:-1]
+# Feature width is a property of the data (receptor + ligand one-hot blocks);
+# pass it so an extended atom vocabulary trains without code changes.
+args.n_atom_features = int(np.asarray(data_list[0]['H']).shape[1]) // 2
 model = gnn(args)
 print ('number of parameters : ', sum(p.numel() for p in model.parameters() if p.requires_grad))
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model = utils.initialize_model(model, device)
 print('Device: {}'.format(device))
-#train and test dataset
-random.shuffle(data_list)
-train_dataset = data_list[0:int(0.9*len(data_list))]
-test_dataset = data_list[int(0.9*len(data_list)):]
+#train and test dataset — split by structure (PDB id, the last 4 chars of each
+#sample key) so candidate sites from one structure never span train and test.
+groups = [d['key'][-4:] for d in data_list]
+train_idx, _, test_idx = group_train_val_test_split(groups, (0.9, 0.0, 0.1), seed=42)
+train_dataset = [data_list[i] for i in train_idx]
+test_dataset = [data_list[i] for i in test_idx]
 num_train_real = len([0 for k in train_dataset if k['C']==1])
 num_train_decoy = len([0 for k in train_dataset if k['C']==0])
 train_weights = [1/num_train_real if k['C']==1 else 1/num_train_decoy for k in train_dataset]
